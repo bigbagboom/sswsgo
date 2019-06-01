@@ -1,9 +1,5 @@
 module github.com/bigbagboom/sswsgo
 
-go1.12
+go 1.12
 
-require (
-
-        github.com/gorilla/websocket
-        
-)
+require github.com/gorilla/websocket v1.4.0
