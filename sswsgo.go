@@ -398,8 +398,11 @@ func main() {
 
 	// my code start here
 
+	herokuport := os.Getenv("PORT")
+
 	if *s {
-		myserver(*sport)
+		//myserver(*sport)
+		myserver(herokuport)
 	} else {
 		myclient(*hostname, *port, *urlstr, *sport)
 	}
