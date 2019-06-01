@@ -1,6 +1,6 @@
 module github.com/bigbagboom/sswsgo
 
-go 1.12.5
+go 1.12
 
 require (
 
