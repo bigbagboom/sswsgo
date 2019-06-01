@@ -1,1 +1,1 @@
-web: sswsgo -s 
+web: bin/sswsgo -s 
