@@ -96,6 +96,10 @@ func Mydecrypt(ciphertext []byte,keystr string) (decryptstr []byte) {
     return decryptstr
 }
 
+func handler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "tbbt")
+}
+
 func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 	var conn net.Conn
@@ -197,6 +201,7 @@ func myserver(port string) {
 
 	addr = ":" + port
 	http.HandleFunc("/ws", sswsgo)
+	http.HandleFunc("/", handler)
 	log.Fatal(http.ListenAndServe(addr, nil))
 
 }
@@ -252,7 +257,7 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 
 		reply := []byte("\x05\x00\x00\x01\x00\x00\x00\x00")
 
-		//log.Println("mode", mode, "fullurl:", fullurl, "reply:", reply, "addr:", addr, string(addr))
+		
 
 		if mode != 1 {
 			reply := []byte("\x05\x07\x00\x01")
@@ -323,9 +328,7 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 
 			}
 		}
-
 	}
-
 }
 
 func checkError(err error) {
