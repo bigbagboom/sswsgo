@@ -20,16 +20,15 @@ import (
 	"os/signal"
 	"strconv"
 	"time"
+
 	//"strings"
 
 	"github.com/gorilla/websocket"
 )
 
-
 var addr string
 var upgrader = websocket.Upgrader{} // use default options
 var keystr string
-
 
 func Myencrypt(text []byte, keystr string) (ciphertext []byte) {
 
@@ -39,7 +38,7 @@ func Myencrypt(text []byte, keystr string) (ciphertext []byte) {
 	c, err := aes.NewCipher(key)
 	// if there are any errors, handle them
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 
 	// gcm or Galois/Counter Mode, is a mode of operation
@@ -49,7 +48,7 @@ func Myencrypt(text []byte, keystr string) (ciphertext []byte) {
 	// if any error generating new GCM
 	// handle them
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 
 	// creates a new byte array the size of the nonce
@@ -58,7 +57,7 @@ func Myencrypt(text []byte, keystr string) (ciphertext []byte) {
 	// populates our nonce with a cryptographically secure
 	// random sequence
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 
 	// here we encrypt our text using the Seal function
@@ -69,44 +68,40 @@ func Myencrypt(text []byte, keystr string) (ciphertext []byte) {
 	ciphertext = gcm.Seal(nonce, nonce, text, nil)
 	return ciphertext
 
-
 }
-
 
 func Mydecrypt(ciphertext []byte,keystr string) (decryptstr []byte) {
 
     c, err := aes.NewCipher([]byte(keystr))
     if err != nil {
-        fmt.Println(err)
+        log.Println(err)
     }
 
     gcm, err := cipher.NewGCM(c)
     if err != nil {
-        fmt.Println(err)
+        log.Println(err)
     }
 
     nonceSize := gcm.NonceSize()
     if len(ciphertext) < nonceSize {
-        fmt.Println(err)
+        log.Println(err)
     }
 
     nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
     decryptstr, err = gcm.Open(nil, nonce, ciphertext, nil)
     if err != nil {
-        fmt.Println(err)
+        log.Println(err)
     }
 
     return decryptstr
 }
-
-
 
 func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 	var conn net.Conn
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Print("upgrade:", err)
+		log.Println("upgrade:", err)
 		return
 	}
 	defer c.Close()
@@ -117,7 +112,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 		//mt, ciphertext, err := c.ReadMessage()
 		_, ciphertext, err := c.ReadMessage()
 		if err != nil {
-			log.Println("read err:", err)
+			log.Println("read err 115:", err)
 			break
 		}
 
@@ -166,7 +161,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 					data := make([]byte, 4096)
 					read_len, err := conn.Read(data)
 					if read_len == 0 {
-						return
+						continue
 					}
 
 					//log.Println("read from remote and write to ws: ", data)
@@ -174,7 +169,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 					err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 					if err != nil {
-						log.Println("write err:", err)
+						log.Println("write err 172:", err)
 						break
 					}
 
@@ -204,10 +199,10 @@ func myserver(port string) {
 
 }
 
-func handleClient(conn net.Conn, urlstr string, port string) {
+func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 
-	conn.SetReadDeadline(time.Now().Add(2 * time.Minute)) // set 2 minutes timeout
-	request := make([]byte, 262)                          // set maxium request length to 128B to prevent flood attack
+	conn.SetDeadline(time.Now().Add(10 * time.Minute))    // set 10 minutes timeout
+	request := make([]byte, 262)                          
 	defer conn.Close()                                    // close connection before exit
 
 	addr := make([]byte, 0)
@@ -271,13 +266,18 @@ func handleClient(conn net.Conn, urlstr string, port string) {
 
 			u := url.URL{Scheme: "ws", Host: fullurl, Path: "ws"}
 
-			//log.Printf("connecting to %s", u.String())
-
 			c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 			if err != nil {
 				log.Fatal("dial:", err)
 			}
 			defer c.Close()
+
+			//log.Printf(" just before get chan")
+
+			//lastcount := <-ch
+			//ch <- lastcount + 1
+
+			//log.Printf("%s connecting to %s", lastcount, u.String())
 
 			ciphertext := Myencrypt(addrToSend, keystr)
 			err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
@@ -294,7 +294,7 @@ func handleClient(conn net.Conn, urlstr string, port string) {
 				for {
 					_, ciphertext, err := c.ReadMessage()
 					if err != nil {
-						log.Println("read err:", err)
+						log.Println("read err 297:", err)
 						return
 					}
 					plaintext := Mydecrypt(ciphertext, keystr)
@@ -307,13 +307,13 @@ func handleClient(conn net.Conn, urlstr string, port string) {
 				data := make([]byte, 4096)
 				read_len, err := conn.Read(data)
 				if read_len == 0 {
-					return
+					continue
 				}
 				ciphertext = Myencrypt(data[:read_len], keystr)
 
 				err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 				if err != nil {
-					log.Println("write err:", err)
+					log.Println("write err 316:", err)
 					return
 				}
 
@@ -334,10 +334,12 @@ func checkError(err error) {
 	}
 }
 
-func myclient(hostname string, port string, urlstr string, sport string) {
+func myclient(hostname string, port string, urlstr string, sport string, ch chan int) {
+
+	//ch <- 0
 
 	service := hostname + ":" + port
-	fmt.Println("this is a client(or local server) at " + service)
+	log.Println("This is a client(or local server) at " + service)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp4", service)
 	checkError(err)
@@ -348,7 +350,7 @@ func myclient(hostname string, port string, urlstr string, sport string) {
 		if err != nil {
 			continue
 		}
-		go handleClient(conn, urlstr, sport)
+		go handleClient(conn, urlstr, sport, ch)
 	}
 }
 
@@ -361,7 +363,7 @@ func main() {
 	c := flag.Bool("c", false, "Client")
 	hostname := flag.String("hostname", "127.0.0.1", "hostname")
 	port := flag.String("port", "7071", "port")
-	sport := flag.String("sport", "6666", "sport")
+	sport := flag.String("sport", "80", "sport")
 	urlstr := flag.String("urlstr", "", "sswsgo server url")
 	key := flag.String("key", "", "16 bit or 32 bit passcode")
 
@@ -369,16 +371,15 @@ func main() {
 	log.SetFlags(0)
 
 	if *s && *c {
-		fmt.Println("或者Server或者Client，不能同时选择!")
+		log.Println("Please choose Server or Client，not both!")
 		return
 	}
 
 	if (*s || *c) == false {
-		fmt.Println("或者Server或者Client，必须选择一个!")
+		log.Println("Please choose Server or Client，not none!")
 		return
 	}
 
-	//text := "My Super Secret Code Stuff"
 	keystr = "passphrasewhichneedstobe32bytes!"   // default key, please do not use this!
 
 	if osenvkey != "" {
@@ -392,21 +393,22 @@ func main() {
 	len_of_key := len(keystr)
 
 	if len_of_key != 16  && len_of_key != 32 {
-		fmt.Println("the length of keystr must be 16 or 32, exitting...")
+		log.Println("The length of keystr must be 16 or 32, exitting...")
 		return
 	}
 
-	// my code start here
+	herokuport := os.Getenv("PORT")    //only for heroku
 
-	herokuport := os.Getenv("PORT")
+	sswsgoconcurrent := make(chan int)
+	//sswsgoconcurrent <- 0
 
 	if *s {
 		//myserver(*sport)
-		myserver(herokuport)
-	} else {
-		myclient(*hostname, *port, *urlstr, *sport)
-	}
+		myserver(herokuport)     //only for heroku
 
-	// my code end here
+	} else {
+		
+		myclient(*hostname, *port, *urlstr, *sport, sswsgoconcurrent)
+	}
 
 }
