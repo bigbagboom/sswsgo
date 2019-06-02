@@ -167,7 +167,8 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 					data := make([]byte, 4096)
 					read_len, err := conn.Read(data)
 					if read_len == 0 {
-						continue
+						//continue
+						break
 					}
 
 					//log.Println("read from remote and write to ws: ", data)
@@ -314,7 +315,8 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 				data := make([]byte, 4096)
 				read_len, err := conn.Read(data)
 				if read_len == 0 {
-					continue
+					//continue
+					break
 				}
 				ciphertext = Myencrypt(data[:read_len], keystr)
 
