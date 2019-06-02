@@ -143,7 +143,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 			}
 
 			remotefull := remotehost + ":" + strconv.Itoa(remoteport)
-			log.Println("connect:",remotefull)
+			log.Println("connect:", remotefull)
 
 			conn, err = net.Dial("tcp", remotefull)
 			if err != nil {
@@ -151,6 +151,8 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 				log.Println("remote unreachable:", err)
 				return
 			}
+
+			conn.SetDeadline(time.Now().Add(10 * time.Minute))    // set 10 minutes timeout
 
 			done := make(chan struct{})
 
@@ -169,7 +171,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 					err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 					if err != nil {
-						log.Println("write err 172:", err)
+						log.Println("write err 174:", err)
 						break
 					}
 
@@ -294,7 +296,7 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 				for {
 					_, ciphertext, err := c.ReadMessage()
 					if err != nil {
-						log.Println("read err 297:", err)
+						log.Println("read err 299:", err)
 						return
 					}
 					plaintext := Mydecrypt(ciphertext, keystr)
@@ -313,7 +315,7 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 
 				err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 				if err != nil {
-					log.Println("write err 316:", err)
+					log.Println("write err 318:", err)
 					return
 				}
 
