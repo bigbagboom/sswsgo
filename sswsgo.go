@@ -116,7 +116,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 		//mt, ciphertext, err := c.ReadMessage()
 		_, ciphertext, err := c.ReadMessage()
 		if err != nil {
-			log.Println("read err 115:", err)
+			log.Println("read err 119:", err)
 			break
 		}
 
@@ -158,10 +158,8 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 			conn.SetDeadline(time.Now().Add(10 * time.Minute))    // set 10 minutes timeout
 
-			done := make(chan struct{})
-
 			go func() {
-				defer close(done)
+
 				for {
 
 					data := make([]byte, 4096)
@@ -176,7 +174,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 					err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 					if err != nil {
-						log.Println("write err 174:", err)
+						log.Println("write err 177:", err)
 						break
 					}
 
@@ -204,6 +202,18 @@ func myserver(port string) {
 	http.HandleFunc("/ws", sswsgo)
 	http.HandleFunc("/", handler)
 	log.Fatal(http.ListenAndServe(addr, nil))
+
+}
+
+func Proxy(proxystr string) func(*http.Request) (*url.URL, error) {
+
+	myproxy := url.URL{Scheme: "http", Host: proxystr}
+
+	return func(*http.Request) (*url.URL, error) {
+
+		return &myproxy, nil
+
+	}
 
 }
 
@@ -258,8 +268,6 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 
 		reply := []byte("\x05\x00\x00\x01\x00\x00\x00\x00")
 
-		
-
 		if mode != 1 {
 			reply := []byte("\x05\x07\x00\x01")
 			conn.Write(reply)
@@ -271,12 +279,13 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 
 			interrupt := make(chan os.Signal, 1)
 			signal.Notify(interrupt, os.Interrupt)
-
+			
 			u := url.URL{Scheme: "ws", Host: fullurl, Path: "ws"}
 
 			c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 			if err != nil {
-				log.Fatal("dial:", err)
+				log.Println("dial:", err)
+				return
 			}
 			defer c.Close()
 
@@ -291,7 +300,7 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 			err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 
 			if err != nil {
-				log.Println("write:", err)
+				log.Println("write err 303:", err)
 				return
 			}
 
@@ -302,7 +311,7 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 				for {
 					_, ciphertext, err := c.ReadMessage()
 					if err != nil {
-						log.Println("read err 299:", err)
+						log.Println("read err 314:", err)
 						return
 					}
 					plaintext := Mydecrypt(ciphertext, keystr)
@@ -322,7 +331,7 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 
 				err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 				if err != nil {
-					log.Println("write err 318:", err)
+					log.Println("write err 334:", err)
 					return
 				}
 
@@ -336,12 +345,12 @@ func handleClient(conn net.Conn, urlstr string, port string, ch chan int) {
 func checkError(err error) {
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
+		log.Fatal("Fatal error: %s", err)
 		os.Exit(1)
 	}
 }
 
-func myclient(hostname string, port string, urlstr string, sport string, ch chan int) {
+func myclient(proxystr string, hostname string, port string, urlstr string, sport string, ch chan int) {
 
 	//ch <- 0
 
@@ -352,6 +361,9 @@ func myclient(hostname string, port string, urlstr string, sport string, ch chan
 	checkError(err)
 	listener, err := net.ListenTCP("tcp", tcpAddr)
 	checkError(err)
+
+	websocket.DefaultDialer.Proxy = Proxy(proxystr)
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -368,7 +380,8 @@ func main() {
 
 	s := flag.Bool("s", false, "Server")
 	c := flag.Bool("c", false, "Client")
-	hostname := flag.String("hostname", "127.0.0.1", "hostname")
+	proxy := flag.String("proxy", "", "local http proxy")
+	hostname := flag.String("hostname", "0.0.0.0", "hostname")
 	port := flag.String("port", "7071", "port")
 	sport := flag.String("sport", "80", "sport")
 	urlstr := flag.String("urlstr", "", "sswsgo server url")
@@ -415,7 +428,7 @@ func main() {
 
 	} else {
 		
-		myclient(*hostname, *port, *urlstr, *sport, sswsgoconcurrent)
+		myclient(*proxy, *hostname, *port, *urlstr, *sport, sswsgoconcurrent)
 	}
 
 }
