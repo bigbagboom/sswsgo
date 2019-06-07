@@ -148,13 +148,16 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 
+	stdoutDone := make(chan struct{})
+	go ping(c, stdoutDone)
+
 	preaddrind := 0
 
 	for {
 		//mt, ciphertext, err := c.ReadMessage()
 		_, ciphertext, err := c.ReadMessage()
 		if err != nil {
-			log.Println("read err 119:", err)
+			log.Println("read err 160:", err)
 			break
 		}
 
@@ -193,10 +196,6 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 				log.Println("remote unreachable: ", err)
 				return
 			}
-
-			stdoutDone := make(chan struct{})
-			go ping(c, stdoutDone)
-
 			conn.SetDeadline(time.Now().Add(10 * time.Minute)) // set 10 minutes timeout
 
 			go func() {
@@ -215,7 +214,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 					err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 					if err != nil {
-						log.Println("write err 177: ", err)
+						log.Println("write err 217: ", err)
 						break
 					}
 
@@ -366,7 +365,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 
 		if err != nil {
-			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 331:", err)
+			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 368:", err)
 			return
 		}
 
@@ -376,7 +375,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 				_, ciphertext, err := c.ReadMessage()
 				if err != nil {
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "read err 341:", err)
+					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "read err 378:", err)
 					return
 				}
 
@@ -400,7 +399,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 			err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 			if err != nil {
-				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 365:", err)
+				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 402:", err)
 				return
 			}
 
