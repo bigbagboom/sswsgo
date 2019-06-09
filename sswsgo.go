@@ -366,11 +366,12 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		defer c.Close()
 
 		c.SetReadLimit(maxMessageSize)
-		c.SetReadDeadline(time.Now().Add(pongWait))
+		c.SetReadDeadline(time.Now().Add(pingPeriod))
 		c.SetPingHandler(func(string) error {
 			if err := c.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
 				log.Println("pong:", err)
 			}
+			c.SetReadDeadline(time.Now().Add(pingPeriod))
 			return nil
 		})
 
@@ -378,7 +379,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 
 		if err != nil {
-			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 381:", err)
+			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 382:", err)
 			return
 		}
 
@@ -388,7 +389,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 				_, ciphertext, err := c.ReadMessage()
 				if err != nil {
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "read err 391:", err)
+					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "read err 392:", err)
 					return
 				}
 
@@ -412,7 +413,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 			err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 			if err != nil {
-				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 415:", err)
+				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 416:", err)
 				return
 			}
 
