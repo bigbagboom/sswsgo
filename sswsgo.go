@@ -45,7 +45,6 @@ const (
 
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
-
 )
 
 func Myencrypt(text []byte, keystr string) (ciphertext []byte) {
@@ -151,13 +150,22 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 	stdoutDone := make(chan struct{})
 	go ping(c, stdoutDone)
 
+	c.SetReadLimit(maxMessageSize)
+	c.SetReadDeadline(time.Now().Add(pongWait))
+	c.SetPongHandler(func(string) error { c.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+
 	preaddrind := 0
 
 	for {
 		//mt, ciphertext, err := c.ReadMessage()
 		_, ciphertext, err := c.ReadMessage()
 		if err != nil {
-			log.Println("read err 160:", err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				log.Printf("error: %v, user-agent: %v", err, r.Header.Get("User-Agent"))
+				return
+			} else {
+				log.Println("read err 167:", err)
+			}
 			break
 		}
 
@@ -214,7 +222,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 					err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 					if err != nil {
-						log.Println("write err 217: ", err)
+						log.Println("write err 225: ", err)
 						break
 					}
 
@@ -359,13 +367,18 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 		c.SetReadLimit(maxMessageSize)
 		c.SetReadDeadline(time.Now().Add(pongWait))
-		c.SetPongHandler(func(string) error { c.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+		c.SetPingHandler(func(string) error {
+			if err := c.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
+				log.Println("pong:", err)
+			}
+			return nil
+		})
 
 		ciphertext := Myencrypt(addrToSend, keystr)
 		err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 
 		if err != nil {
-			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 368:", err)
+			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 381:", err)
 			return
 		}
 
@@ -375,7 +388,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 				_, ciphertext, err := c.ReadMessage()
 				if err != nil {
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "read err 378:", err)
+					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "read err 391:", err)
 					return
 				}
 
@@ -399,7 +412,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 			err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 			if err != nil {
-				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 402:", err)
+				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 415:", err)
 				return
 			}
 
