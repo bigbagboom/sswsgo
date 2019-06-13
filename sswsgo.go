@@ -32,7 +32,7 @@ const (
 	writeWait = 10 * time.Second
 
 	// Maximum message size allowed from peer.
-	maxMessageSize = 8192
+	//maxMessageSize = 8192
 
 	// Time allowed to read the next pong message from the peer.
 	pongWait = 28 * time.Second
@@ -144,7 +144,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 	stdoutDone := make(chan struct{})
 	go ping(c, stdoutDone)
 
-	c.SetReadLimit(maxMessageSize)
+	//c.SetReadLimit(maxMessageSize)
 	c.SetReadDeadline(time.Now().Add(pongWait))
 	c.SetPongHandler(func(string) error { c.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 
@@ -361,7 +361,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		}
 		defer c.Close()
 
-		c.SetReadLimit(maxMessageSize)
+		//c.SetReadLimit(maxMessageSize)
 		c.SetReadDeadline(time.Now().Add(pingPeriod))
 		c.SetPingHandler(func(string) error {
 			if err := c.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
