@@ -6,24 +6,18 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-
 	"encoding/binary"
 	"flag"
-
+	"strings"
 	"log"
 	"net"
 	"net/http"
-
 	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
 	"time"
-
 	"sync/atomic"
-
-	"strings"
-
 	"github.com/gorilla/websocket"
 )
 
@@ -211,26 +205,28 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 				for {
 
 					data := make([]byte, 4096)
+
 					read_len, err := conn.Read(data)
-					if read_len == 0 {
-						//continue
-						break
-					}
-
-					//log.Println("read from remote and write to ws: ", data)
-					ciphertext = Myencrypt(data[:read_len], keystr)
-
-					err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 					if err != nil {
-						log.Println("write err 225: ", err)
+					  if err != io.EOF {
+					    log.Println("remote read err 212: ", err)
+					  }
 						break
 					}
+					
+					if read_len > 0 {
 
+					  ciphertext = Myencrypt(data[:read_len], keystr)
+					  
+					  err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
+					  if err != nil {
+					    log.Println("write err 223: ", err)
+					    break
+					  }
+					}
 					data = make([]byte, 4096)
-
 				}
 			}()
-
 		} else {
 
 			if conn != nil {
@@ -351,7 +347,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		localclient := conn.RemoteAddr().String()
 		idintotal := "[" + localclient + "] in total"
 
-		log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "connect ->", remotehost)
+		log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "connect ->", remotehost, ":", int(binary.BigEndian.Uint16(port)))
 
 		interrupt := make(chan os.Signal, 1)
 		signal.Notify(interrupt, os.Interrupt)
@@ -379,7 +375,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 
 		if err != nil {
-			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 382:", err)
+			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 378:", err)
 			return
 		}
 
@@ -389,7 +385,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 				_, ciphertext, err := c.ReadMessage()
 				if err != nil {
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "read err 392:", err)
+					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket read err 388:", err)
 					return
 				}
 
@@ -403,20 +399,26 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		for {
 
 			data := make([]byte, 4096)
+			
 			read_len, err := conn.Read(data)
-			if read_len == 0 {
-
-				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "client no more data for read")
-				break
-			}
-			ciphertext = Myencrypt(data[:read_len], keystr)
-
-			err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
+			
 			if err != nil {
-				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 416:", err)
-				return
+			  if err != io.EOF {
+			    log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read err 407:", err)
+			  }
+			  break
 			}
-
+					
+			if read_len > 0 {
+			
+			  ciphertext = Myencrypt(data[:read_len], keystr)
+			  
+			  err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
+			  if err != nil {
+			    log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 418:", err)
+			    return
+			  }
+			}
 			data = make([]byte, 4096)
 		}
 	}
