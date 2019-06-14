@@ -127,6 +127,7 @@ func ping(ws *websocket.Conn, done chan struct{}) {
 		case <-ticker.C:
 			if err := ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
 				log.Println("ping:", err)
+				return
 			}
 		case <-done:
 			return
