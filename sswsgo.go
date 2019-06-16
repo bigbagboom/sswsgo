@@ -16,12 +16,13 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
+	//"strings"
 	"sync/atomic"
 	"time"
 )
 
-var addr string
+var remotehost string
+var remoteport int
 var upgrader = websocket.Upgrader{} // use default options
 var keystr string
 var concurrent uint64
@@ -29,13 +30,13 @@ var concurrent uint64
 const (
 
 	// Time allowed to write a message to the peer.
-	writeWait = 10 * time.Second
+	writeWait = 15 * time.Second
 
 	// Maximum message size allowed from peer.
 	//maxMessageSize = 8192
 
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 28 * time.Second
+	pongWait = 40 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
@@ -168,9 +169,8 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 		}
 
 		gotdata := Mydecrypt(ciphertext, keystr)
-		var addrtype, addrlen byte
-		remotehost := ""
-		var remoteport int
+
+		var addrtype, addrlen byte		
 
 		if preaddrind == 0 {
 			preaddrind = 1
@@ -213,7 +213,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 					read_len, err := conn.Read(data)
 					if err != nil {
 						if err != io.EOF {
-							log.Println("remote read err 215: ", err)
+							log.Println("remote read err 216: ", err)
 							break
 						} else {
 							if read_len == 0 {
@@ -228,7 +228,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 						err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 						if err != nil {
-							log.Println("write err 230: ", err)
+							log.Println("write err 231: ", err)
 							break
 						}
 					}
@@ -249,10 +249,10 @@ func myserver(port string) {
 
 	//log.Println("Server start")
 
-	addr = ":" + port
+	remoteaddr := ":" + port
 	http.HandleFunc("/ws", sswsgo)
 	http.HandleFunc("/", handler)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	log.Fatal(http.ListenAndServe(remoteaddr, nil))
 }
 
 func Proxy(proxystr string) func(*http.Request) (*url.URL, error) {
@@ -270,7 +270,8 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 	defer conn.Close()                                 // close connection before exit
 	conn.SetDeadline(time.Now().Add(10 * time.Minute)) // set 10 minutes timeout
 
-	addr := make([]byte, 0)
+	var addr []byte
+
 	request := make([]byte, 262)
 	conn.Read(request)
 	conn.Write([]byte("\x05\x00"))
@@ -291,11 +292,11 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 		if addrtype != 1 && addrtype != 3 {
 
-			log.Println(nowstr(), " unsupported addrtype: ", addrtype)
+			log.Println(nowstr(), "unsupported addrtype: ", addrtype)
 			return
 		}
 
-		addrToSend := data[3:4]
+		addrToSend := data[3:]
 
 		if addrtype == 3 {
 
@@ -310,6 +311,8 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 			for _, v := range addr {
 				addrToSend = append(addrToSend, v)
 			}
+
+			remotehost = string(addr)
 		}
 
 		if addrtype == 1 {
@@ -317,10 +320,11 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 			ip_bytes := make([]byte, 4)
 			conn.Read(ip_bytes)
 
-			addr = []byte(string(ip_bytes[0]) + "." + string(ip_bytes[1]) + "." + string(ip_bytes[2]) + "." + string(ip_bytes[3]))
 			for _, v := range ip_bytes {
 				addrToSend = append(addrToSend, v)
 			}
+
+			remotehost = string(ip_bytes[0]) + "." + string(ip_bytes[1]) + "." + string(ip_bytes[2]) + "." + string(ip_bytes[3])
 		}
 
 		fullurl := urlstr + ":" + sport
@@ -337,29 +341,11 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		atomic.AddUint64(&concurrent, 1)
 		defer atomic.AddUint64(&concurrent, ^uint64(0))
 
-		remotehost := ""
-
-		if len(addrToSend)-2 > 2 {
-
-			if addrtype == 3 {
-
-				remotehost = string(addrToSend[2 : len(addrToSend)-2])
-			} else {
-
-				remotehost = string(addrToSend[1 : len(addrToSend)-2])
-			}
-		}
-
-		if !strings.ContainsRune(remotehost, '.') {
-
-			log.Println(nowstr(), " is the remotehost valid?")
-			return
-		}
-
 		localclient := conn.RemoteAddr().String()
 		idintotal := "[" + localclient + "] in total"
 
-		log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "connect ->", remotehost, ":", int(binary.BigEndian.Uint16(port)))
+		remotefull := remotehost + ":" + strconv.Itoa(int(binary.BigEndian.Uint16(port)))
+		log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "connect ->", remotefull)
 
 		interrupt := make(chan os.Signal, 1)
 		signal.Notify(interrupt, os.Interrupt)
@@ -389,7 +375,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 		if err != nil {
 
-			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 391:", err)
+			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 378:", err)
 			return
 		}
 
@@ -400,7 +386,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 				_, ciphertext, err := c.ReadMessage()
 				if err != nil {
 
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket read err 402:", err)
+					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket read err 389:", err)
 					return
 				}
 
@@ -421,7 +407,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 			if err != nil {
 				if err != io.EOF {
 
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read err 423:", err)
+					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read err 410:", err)
 					break
 				} else {
 
@@ -437,7 +423,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 				err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 				if err != nil {
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 439:", err)
+					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 426:", err)
 					return
 				}
 			}
