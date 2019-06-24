@@ -397,7 +397,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		conn.Read(port)
 		addrToSend = append(addrToSend, port[0], port[1])
 
-		reply := []byte("\x05\x00\x00\x01\x00\x00\x00\x00")
+		reply := []byte("\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00")
 
 		conn.Write(reply)
 
