@@ -338,16 +338,17 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 			remotehost = string(addr)
 		}
 
+		ip_bytes := make([]byte, 4)
+		
 		if addrtype == 1 {
 
-			ip_bytes := make([]byte, 4)
 			conn.Read(ip_bytes)
 
 			for _, v := range ip_bytes {
 				addrToSend = append(addrToSend, v)
 			}
 
-			remotehost = string(ip_bytes[0]) + "." + string(ip_bytes[1]) + "." + string(ip_bytes[2]) + "." + string(ip_bytes[3])
+			remotehost = strconv.Itoa(int(ip_bytes[0])) + "." + strconv.Itoa(int(ip_bytes[1])) + "." + strconv.Itoa(int(ip_bytes[2])) + "." + strconv.Itoa(int(ip_bytes[3]))
 		}
 
 		fullurl := urlstr + ":" + sport
