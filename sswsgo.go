@@ -33,6 +33,8 @@ var remoteport int
 var keystr string
 var concurrent uint64
 
+const timeout = 10 * time.Minute
+
 var upgrader = websocket.Upgrader{} // use default options
 
 func Myencrypt(text []byte, keystr string) (ciphertext []byte) {
@@ -103,7 +105,7 @@ func Mydecrypt(ciphertext []byte, keystr string) (decryptstr []byte) {
 
 func nowstr() string {
 
-	return time.Now().Format("2006-01-02 15:04:05.999")
+	return time.Now().Format("2006-01-02 15:04:05.9999")
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +185,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			defer conn.Close()
-			conn.SetDeadline(time.Now().Add(10 * time.Minute)) // set 10 minutes timeout
+			conn.SetDeadline(time.Now().Add(timeout)) // set 10 minutes timeout
 			
 			wg.Add(2)
 
@@ -284,8 +286,17 @@ func Proxy(proxystr string) func(*http.Request) (*url.URL, error) {
 
 func handleClient(conn net.Conn, urlstr string, sport string) {
 
-	defer conn.Close()                                 // close connection before exit
-	conn.SetDeadline(time.Now().Add(10 * time.Minute)) // set 10 minutes timeout
+	localclient := conn.RemoteAddr().String()
+	localclientid := "[" + localclient + "]"
+	idintotal := localclientid + " in total"
+
+	defer func(){
+		conn.Close()                                   // close connection before exit
+		atomic.AddUint64(&concurrent, ^uint64(0))   
+		log.Println(nowstr(), localclientid, "now closed. Concurrent connection is:", atomic.LoadUint64(&concurrent))   
+	}()
+                            
+	conn.SetDeadline(time.Now().Add(timeout)) // set 10 minutes timeout
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -360,10 +371,6 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		conn.Write([]byte("\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00"))
 
 		atomic.AddUint64(&concurrent, 1)
-		defer atomic.AddUint64(&concurrent, ^uint64(0))
-
-		localclient := conn.RemoteAddr().String()
-		idintotal := "[" + localclient + "] in total"
 
 		remotefull := remotehost + ":" + strconv.Itoa(int(binary.BigEndian.Uint16(port)))
 		log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "connect ->", remotefull)
@@ -389,94 +396,147 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 388:", err)
 			return
 		}
+
+		quit1 := make(chan struct{})
+		quit2 := make(chan struct{})
+		quit3 := make(chan struct{})
+		quit4 := make(chan struct{})
 		
-		wg.Add(2)
+		wg.Add(3)
 
 		go func() {
 
 			defer wg.Done()
+			breakfor := false
 			for {
 
-				_, ciphertext, err := c.ReadMessage()
-				if err != nil {
+				select {
+				case <-quit3:
+					breakfor = true
+					break
+				default:
+					_, ciphertext, err := c.ReadMessage()
+					if err != nil {
 
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket read err 402:", err)
-					mu.Lock()
-					wqueue.dq.PushBack([]byte("*** error or close ***"))
-					mu.Unlock()
+						log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket read err 421:", err)
+						close(quit1)
+						close(quit2)
+						breakfor = true
+						break
+					}
+
+					plaintext := Mydecrypt(ciphertext, keystr)
+
+					if len(plaintext) != 0 {
+						mu.Lock()
+						wqueue.dq.PushBack(plaintext)
+						mu.Unlock()
+					}
+				}
+
+				if breakfor {
 					break
 				}
-
-				plaintext := Mydecrypt(ciphertext, keystr)
-
-				if len(plaintext) != 0 {
-					mu.Lock()
-					wqueue.dq.PushBack(plaintext)
-					mu.Unlock()
-				}
 			}
-
 		}()
 
 		go func() {
 
 			defer wg.Done()
+			breakfor := false
 			for {
 
-				if wqueue.dq.Len() > 0 {
+				select {
+				case <-quit1:
+					breakfor = true
+					break
+				case <-quit4:
+					breakfor = true
+					break
+				default:
 
-					mu.Lock()
+					if wqueue.dq.Len() > 0 {
 
-					first := wqueue.dq.Front()
-					dataforwrite := first.Value.([]byte)
+						mu.Lock()
 
-					if len(dataforwrite) == len([]byte("*** error or close ***")) {
-						if string(dataforwrite) == "*** error or close ***" {
-							conn.Close()  // later use a chan to indicate immediate close the conn
+						first := wqueue.dq.Front()
+						dataforwrite := first.Value.([]byte)
+
+						conn.Write(dataforwrite)
+						wqueue.dq.Remove(first)
+						mu.Unlock()
+
+					} else {
+
+						time.Sleep(time.Second)
+					}
+				}
+				if breakfor {
+					break
+				}
+			}
+		}()
+
+		go func() {
+
+			defer wg.Done()
+			breakfor := false
+			for {
+
+				data := make([]byte, 4096)
+
+				select {
+				case <-quit2:
+					breakfor = true
+					break
+				default: 
+
+					erreof := false 
+				    read_len, err := conn.Read(data)
+
+					if err != nil {
+						if err != io.EOF {
+
+							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read err 500:", err)
+							breakfor = true
 							break
+						} else {
+
+							erreof = true 
+							if read_len == 0 {
+
+								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0:", err)							
+								breakfor = true
+								break
+							}
 						}
 					}
 
-					conn.Write(dataforwrite)
-					wqueue.dq.Remove(first)
-					mu.Unlock()
+					if read_len > 0 {
 
-				} else {
+						ciphertext = Myencrypt(data[:read_len], keystr)
 
-					time.Sleep(time.Second)
+						err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
+						if err != nil {
+							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 521:", err)							
+							breakfor = true
+							break
+						}
+						if erreof {
+							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "got io.EOF and local read length > 0")
+							breakfor = true
+							break
+						}
+					}
+				}
+
+				if breakfor {
+					close(quit3)
+					close(quit4)
+					break
 				}
 			}
 		}()
-
-		for {
-
-			data := make([]byte, 4096)
-
-			read_len, err := conn.Read(data)
-
-			if err != nil {
-				if err != io.EOF {
-
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read err 458:", err)
-					break
-				} else {
-					if read_len == 0 {
-						break
-					}
-				}
-			}
-
-			if read_len > 0 {
-
-				ciphertext = Myencrypt(data[:read_len], keystr)
-
-				err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
-				if err != nil {
-					log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 473:", err)
-					return
-				}
-			}
-		}
 
 		wg.Wait()
 	}
