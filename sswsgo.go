@@ -34,6 +34,7 @@ var keystr string
 var concurrent uint64
 
 const timeout = 10 * time.Minute
+const errorend = "*** error or close ***"
 
 var upgrader = websocket.Upgrader{} // use default options
 
@@ -133,131 +134,208 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 	preaddrind := 0
 
+	quit1 := make(chan struct{})
+	quit2 := make(chan struct{})
+	quit3 := make(chan struct{})
+	quit4 := make(chan struct{})
+	quit5 := make(chan struct{})
+	quit6 := make(chan struct{})
+
+	breakfor := false
 	for {
-		//mt, ciphertext, err := c.ReadMessage()
-		_, ciphertext, err := c.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				log.Printf(connclient, "error: %v, user-agent: %v", err, r.Header.Get("User-Agent"))
-			} else {
-				log.Println(connclient, "read err 141:", err)
-			}
 
-			mu.Lock()
-			wqueue.dq.PushBack([]byte("*** error or close ***"))
-			mu.Unlock()
+		select {
 
+		case <-quit1:
+			breakfor = true
 			break
-		}
+		case <-quit4:
+			breakfor = true
+			break
 
-		gotdata := Mydecrypt(ciphertext, keystr)
+		default:
 
-		var addrtype, addrlen byte
-
-		if preaddrind == 0 {
-			preaddrind = 1
-
-			addrtype = gotdata[0]
-
-			if addrtype == 3 {
-				addrlen = gotdata[1]
-			}
-
-			if addrtype == 1 {
-				ip_bytes := make([]byte, 4)
-				ip_bytes = gotdata[1:5]
-				remotehost = string(ip_bytes[0]) + "." + string(ip_bytes[1]) + "." + string(ip_bytes[2]) + "." + string(ip_bytes[3])
-				remoteport = int(binary.BigEndian.Uint16(gotdata[5:7]))
-			}
-
-			if addrtype == 3 {
-				remotehost = string(gotdata[2 : 2+addrlen])
-				remoteport = int(binary.BigEndian.Uint16(gotdata[2+addrlen : 4+addrlen]))
-			}
-
-			remotefull := remotehost + ":" + strconv.Itoa(remoteport)
-			log.Println(connclient, "connect: ", remotefull)
-
-			conn, err = net.Dial("tcp", remotefull)
+			//mt, ciphertext, err := c.ReadMessage()
+			_, ciphertext, err := c.ReadMessage()
 			if err != nil {
-				// handle error
-				log.Println(connclient, "remote unreachable 182: ", err)
-				break
-			}
-			defer conn.Close()
-			conn.SetDeadline(time.Now().Add(timeout)) // set 10 minutes timeout
-			
-			wg.Add(2)
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+					log.Printf(connclient, "error: ", err, ", user-agent: ", r.Header.Get("User-Agent"))
+				} else {
+					log.Println(connclient, "read err 141:", err)
+				}
 
-			go func() {
+				mu.Lock()
+				wqueue.dq.PushBack([]byte(errorend))
+				mu.Unlock()
 
-				defer wg.Done()
-				for {
+				breakfor = true
+			} else {
 
-					data := make([]byte, 4096)
+				gotdata := Mydecrypt(ciphertext, keystr)
 
-					read_len, err := conn.Read(data)
+				var addrtype, addrlen byte
 
+				if preaddrind == 0 {
+					preaddrind = 1
+
+					addrtype = gotdata[0]
+
+					if addrtype == 3 {
+						addrlen = gotdata[1]
+					}
+
+					if addrtype == 1 {
+						ip_bytes := make([]byte, 4)
+						ip_bytes = gotdata[1:5]
+						remotehost = string(ip_bytes[0]) + "." + string(ip_bytes[1]) + "." + string(ip_bytes[2]) + "." + string(ip_bytes[3])
+						remoteport = int(binary.BigEndian.Uint16(gotdata[5:7]))
+					}
+
+					if addrtype == 3 {
+						remotehost = string(gotdata[2 : 2+addrlen])
+						remoteport = int(binary.BigEndian.Uint16(gotdata[2+addrlen : 4+addrlen]))
+					}
+
+					remotefull := remotehost + ":" + strconv.Itoa(remoteport)
+					log.Println(connclient, "connect: ", remotefull)
+
+					conn, err = net.Dial("tcp", remotefull)
 					if err != nil {
-						if err != io.EOF {
-							log.Println(connclient, "remote read err 201: ", err)
-							break
-						} else {
-							if read_len == 0 {
-								break
-							}
-						}
-					}
-
-					if read_len > 0 {
-
-						ciphertext = Myencrypt(data[:read_len], keystr)
-
-						err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
-						if err != nil {
-							log.Println(connclient, "websocket write err 216: ", err)
-							break
-						}
-					}
-				}
-
-				ciphertext = Myencrypt([]byte("*** error or close ***"), keystr)
-
-				err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
-				if err != nil {
-					log.Println(connclient, "websocket write err 226: ", err)
-				}
-			}()
-
-			go func() {
-
-				defer wg.Done()
-				for {
-					if wqueue.dq.Len() > 0 {
-
-						first := wqueue.dq.Front()
-						dataforwrite := first.Value.([]byte)
-						conn.Write(dataforwrite)
-						if len(dataforwrite) == len([]byte("*** error or close ***")) {
-							if string(dataforwrite) == "*** error or close ***" {
-								break
-							}
-						}
-						mu.Lock()
-						wqueue.dq.Remove(first)
-						mu.Unlock()
-
+						// handle error
+						log.Println(connclient, "remote unreachable 182: ", err)
+						breakfor = true
 					} else {
 
-						time.Sleep(time.Second)
-					}
-				}
-			}()
-		} else {
+						defer conn.Close()
+						conn.SetDeadline(time.Now().Add(timeout)) // set 10 minutes timeout
 
-			mu.Lock()
-			wqueue.dq.PushBack(gotdata)
-			mu.Unlock()
+						wg.Add(2)
+
+						go func() {
+
+							defer wg.Done()
+							breakfor := false
+							notwserr := true
+							for {
+
+								select {
+
+								case <-quit2:
+									breakfor = true
+									break
+								case <-quit5:
+									breakfor = true
+									break
+
+								default:
+
+									data := make([]byte, 4096)
+
+									read_len, err := conn.Read(data)
+
+									if err != nil {
+										if err != io.EOF {
+											log.Println(connclient, "remote read err 201: ", err)
+											breakfor = true
+										} else {
+											if read_len == 0 {
+												breakfor = true
+											}
+										}
+									}
+
+									if read_len > 0 {
+
+										ciphertext = Myencrypt(data[:read_len], keystr)
+
+										err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
+										if err != nil {
+											log.Println(connclient, "websocket write err 216: ", err)
+											notwserr = false
+											breakfor = true
+										}
+									}
+								}
+
+								if breakfor {
+									close(quit1)
+									close(quit6)
+									break
+								}
+
+							}
+
+							if notwserr {
+
+								ciphertext = Myencrypt([]byte(errorend), keystr)
+
+								err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
+								if err != nil {
+									log.Println(connclient, "websocket write err 226: ", err)
+								}
+
+							}
+						}()
+
+						go func() {
+
+							defer wg.Done()
+							breakfor := false
+							for {
+								select {
+
+								case <-quit3:
+									breakfor = true
+									break
+								case <-quit6:
+									breakfor = true
+									break
+
+								default:
+
+									if wqueue.dq.Len() > 0 {
+
+										first := wqueue.dq.Front()
+										dataforwrite := first.Value.([]byte)
+										mu.Lock()
+										wqueue.dq.Remove(first)
+										mu.Unlock()
+
+										if len(dataforwrite) == len([]byte(errorend)) && string(dataforwrite) == errorend {
+											breakfor = true
+										} else {
+											conn.Write(dataforwrite)
+											conn.SetDeadline(time.Now().Add(timeout)) // set 10 minutes timeout
+										}
+
+									} else {
+
+										time.Sleep(time.Second)
+									}
+								}
+
+								if breakfor {
+									close(quit4)
+									close(quit5)
+									break
+								}
+							}
+						}()
+
+					}
+				} else {
+
+					mu.Lock()
+					wqueue.dq.PushBack(gotdata)
+					mu.Unlock()
+				}
+			}
+		}
+
+		if breakfor {
+			close(quit2)
+			close(quit3)
+			break
 		}
 	}
 
@@ -290,12 +368,12 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 	localclientid := "[" + localclient + "]"
 	idintotal := localclientid + " in total"
 
-	defer func(){
-		conn.Close()                                   // close connection before exit
-		atomic.AddUint64(&concurrent, ^uint64(0))   
-		log.Println(nowstr(), localclientid, "now closed. Concurrent connection is:", atomic.LoadUint64(&concurrent))   
+	defer func() {
+		conn.Close() // close connection before exit
+		atomic.AddUint64(&concurrent, ^uint64(0))
+		log.Println(nowstr(), localclientid, "now closed. Concurrent connection is:", atomic.LoadUint64(&concurrent))
 	}()
-                            
+
 	conn.SetDeadline(time.Now().Add(timeout)) // set 10 minutes timeout
 
 	var mu sync.Mutex
@@ -350,7 +428,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		}
 
 		ip_bytes := make([]byte, 4)
-		
+
 		if addrtype == 1 {
 
 			conn.Read(ip_bytes)
@@ -401,7 +479,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 		quit2 := make(chan struct{})
 		quit3 := make(chan struct{})
 		quit4 := make(chan struct{})
-		
+
 		wg.Add(3)
 
 		go func() {
@@ -489,10 +567,10 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 				case <-quit2:
 					breakfor = true
 					break
-				default: 
+				default:
 
-					erreof := false 
-				    read_len, err := conn.Read(data)
+					erreof := false
+					read_len, err := conn.Read(data)
 
 					if err != nil {
 						if err != io.EOF {
@@ -502,10 +580,10 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 							break
 						} else {
 
-							erreof = true 
+							erreof = true
 							if read_len == 0 {
 
-								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0:", err)							
+								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0:", err)
 								breakfor = true
 								break
 							}
@@ -518,7 +596,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 						err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 						if err != nil {
-							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 521:", err)							
+							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 521:", err)
 							breakfor = true
 							break
 						}
