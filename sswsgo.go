@@ -145,14 +145,12 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 	for {
 
 		select {
-
 		case <-quit1:
 			breakfor = true
 			break
 		case <-quit4:
 			breakfor = true
 			break
-
 		default:
 
 			//mt, ciphertext, err := c.ReadMessage()
@@ -161,7 +159,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 					log.Printf(connclient, "error: ", err, ", user-agent: ", r.Header.Get("User-Agent"))
 				} else {
-					log.Println(connclient, "read err 141:", err)
+					log.Println(connclient, "read err 164:", err)
 				}
 
 				mu.Lock()
@@ -201,8 +199,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 					conn, err = net.Dial("tcp", remotefull)
 					if err != nil {
-						// handle error
-						log.Println(connclient, "remote unreachable 182: ", err)
+						log.Println(connclient, "remote unreachable 204: ", err)
 						breakfor = true
 					} else {
 
@@ -219,14 +216,12 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 							for {
 
 								select {
-
 								case <-quit2:
 									breakfor = true
 									break
 								case <-quit5:
 									breakfor = true
 									break
-
 								default:
 
 									data := make([]byte, 4096)
@@ -235,7 +230,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 									if err != nil {
 										if err != io.EOF {
-											log.Println(connclient, "remote read err 201: ", err)
+											log.Println(connclient, "remote read err 233: ", err)
 											breakfor = true
 										} else {
 											if read_len == 0 {
@@ -250,7 +245,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 										err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 										if err != nil {
-											log.Println(connclient, "websocket write err 216: ", err)
+											log.Println(connclient, "websocket write err 248: ", err)
 											notwserr = false
 											breakfor = true
 										}
@@ -271,7 +266,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 								err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 								if err != nil {
-									log.Println(connclient, "websocket write err 226: ", err)
+									log.Println(connclient, "websocket write err 269: ", err)
 								}
 
 							}
@@ -283,14 +278,12 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 							breakfor := false
 							for {
 								select {
-
 								case <-quit3:
 									breakfor = true
 									break
 								case <-quit6:
 									breakfor = true
 									break
-
 								default:
 
 									if wqueue.dq.Len() > 0 {
@@ -362,8 +355,9 @@ func Proxy(proxystr string) func(*http.Request) (*url.URL, error) {
 	}
 }
 
-func handleClient(conn net.Conn, urlstr string, sport string) {
+func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 
+	conn_need_closed := false
 	localclient := conn.RemoteAddr().String()
 	localclientid := "[" + localclient + "]"
 	idintotal := localclientid + " in total"
@@ -371,7 +365,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 	defer func() {
 		conn.Close() // close connection before exit
 		atomic.AddUint64(&concurrent, ^uint64(0))
-		log.Println(nowstr(), localclientid, "now closed. Concurrent connection is:", atomic.LoadUint64(&concurrent))
+		log.Println(nowstr(), localclientid, "closed. Concurrent connection is:", atomic.LoadUint64(&concurrent))
 	}()
 
 	conn.SetDeadline(time.Now().Add(timeout)) // set 10 minutes timeout
@@ -471,7 +465,9 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 		if err != nil {
 
-			log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 388:", err)
+			if tolog {
+				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 469:", err)
+			}
 			return
 		}
 
@@ -493,10 +489,16 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 					breakfor = true
 					break
 				default:
+					if conn_need_closed {
+						log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "conn need closed in websocket read goroutine but not! 493")
+					}
+
 					_, ciphertext, err := c.ReadMessage()
 					if err != nil {
 
-						log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket read err 421:", err)
+						if tolog {
+							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket read err 500:", err)
+						}
 						close(quit1)
 						close(quit2)
 						breakfor = true
@@ -510,7 +512,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 						wqueue.dq.PushBack(plaintext)
 						mu.Unlock()
 					}
-				}
+				} // END OF SELECT
 
 				if breakfor {
 					break
@@ -533,6 +535,10 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 					break
 				default:
 
+					if conn_need_closed {
+						log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "conn need closed in connection write goroutine but not! 539")
+					}
+
 					if wqueue.dq.Len() > 0 {
 
 						mu.Lock()
@@ -548,7 +554,8 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 						time.Sleep(time.Second)
 					}
-				}
+				} //END OF SELECT
+
 				if breakfor {
 					break
 				}
@@ -566,6 +573,7 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 				select {
 				case <-quit2:
 					breakfor = true
+					conn_need_closed = true
 					break
 				default:
 
@@ -575,16 +583,22 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 					if err != nil {
 						if err != io.EOF {
 
-							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read err 500:", err)
+							if tolog {
+								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read err 587:", err)
+							}
 							breakfor = true
+							conn_need_closed = true
 							break
 						} else {
 
 							erreof = true
 							if read_len == 0 {
 
-								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0:", err)
+								if tolog {
+									log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0 at 598:", err)
+								}
 								breakfor = true
+								conn_need_closed = true
 								break
 							}
 						}
@@ -596,17 +610,30 @@ func handleClient(conn net.Conn, urlstr string, sport string) {
 
 						err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 						if err != nil {
-							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 521:", err)
+							if tolog {
+								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 598:", err)
+							}
 							breakfor = true
+							conn_need_closed = true
 							break
 						}
 						if erreof {
-							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "got io.EOF and local read length > 0")
+							if tolog {
+								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "got io.EOF and local read length > 0.   622")
+							}
 							breakfor = true
+							conn_need_closed = true
 							break
 						}
+					} else {
+						if tolog {
+							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0 at 608 with no error.   630")
+						}
+						breakfor = true
+						conn_need_closed = true
+						break
 					}
-				}
+				} // END OF SELECT
 
 				if breakfor {
 					close(quit3)
@@ -628,7 +655,7 @@ func checkError(err error) {
 	}
 }
 
-func myclient(proxystr string, hostname string, port string, urlstr string, sport string) {
+func myclient(proxystr string, hostname string, port string, urlstr string, sport string, tolog bool) {
 
 	service := hostname + ":" + port
 	log.Println("This is a client(or local server) at " + service)
@@ -647,7 +674,7 @@ func myclient(proxystr string, hostname string, port string, urlstr string, spor
 		if err != nil {
 			continue
 		}
-		go handleClient(conn, urlstr, sport)
+		go handleClient(conn, urlstr, sport, tolog)
 	}
 }
 
@@ -657,6 +684,7 @@ func main() {
 
 	s := flag.Bool("s", false, "Server")
 	c := flag.Bool("c", false, "Client")
+	tolog := flag.Bool("tolog", false, "log or not")
 	proxy := flag.String("proxy", "", "local http proxy")
 	hostname := flag.String("hostname", "0.0.0.0", "hostname")
 	port := flag.String("port", "7071", "port")
@@ -702,6 +730,6 @@ func main() {
 
 	} else {
 
-		myclient(*proxy, *hostname, *port, *urlstr, *sport)
+		myclient(*proxy, *hostname, *port, *urlstr, *sport, *tolog)
 	}
 }
