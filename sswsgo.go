@@ -199,7 +199,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 					conn, err = net.Dial("tcp", remotefull)
 					if err != nil {
-						log.Println(connclient, "remote unreachable 204: ", err)
+						log.Println(connclient, "remote unreachable 202: ", err)
 						breakfor = true
 					} else {
 
@@ -257,7 +257,6 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 									close(quit6)
 									break
 								}
-
 							}
 
 							if notwserr {
@@ -266,7 +265,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 
 								err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 								if err != nil {
-									log.Println(connclient, "websocket write err 269: ", err)
+									log.Println(connclient, "websocket write err 268: ", err)
 								}
 
 							}
@@ -313,8 +312,25 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 									break
 								}
 							}
-						}()
 
+							for {
+								if wqueue.dq.Len() > 0 {
+									first := wqueue.dq.Front()
+									dataforwrite := first.Value.([]byte)
+									mu.Lock()
+									wqueue.dq.Remove(first)
+									mu.Unlock()
+
+									if len(dataforwrite) == len([]byte(errorend)) && string(dataforwrite) == errorend {
+										break
+									} else {
+										conn.Write(dataforwrite)
+									}
+								} else {
+									break
+								}
+							}
+						}()
 					}
 				} else {
 
@@ -466,7 +482,7 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 		if err != nil {
 
 			if tolog {
-				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 469:", err)
+				log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "write err 485:", err)
 			}
 			return
 		}
@@ -490,14 +506,14 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 					break
 				default:
 					if conn_need_closed {
-						log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "conn need closed in websocket read goroutine but not! 493")
+						log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "conn need closed in websocket read goroutine but not! at 509")
 					}
 
 					_, ciphertext, err := c.ReadMessage()
 					if err != nil {
 
 						if tolog {
-							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket read err 500:", err)
+							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket read err 516:", err)
 						}
 						close(quit1)
 						close(quit2)
@@ -536,7 +552,7 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 				default:
 
 					if conn_need_closed {
-						log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "conn need closed in connection write goroutine but not! 539")
+						log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "conn need closed in connection write goroutine but not! at 555")
 					}
 
 					if wqueue.dq.Len() > 0 {
@@ -557,6 +573,23 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 				} //END OF SELECT
 
 				if breakfor {
+					break
+				}
+			}
+
+			for {
+				if wqueue.dq.Len() > 0 {
+
+					mu.Lock()
+
+					first := wqueue.dq.Front()
+					dataforwrite := first.Value.([]byte)
+
+					conn.Write(dataforwrite)
+					wqueue.dq.Remove(first)
+					mu.Unlock()
+
+				} else {
 					break
 				}
 			}
@@ -584,7 +617,7 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 						if err != io.EOF {
 
 							if tolog {
-								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read err 587:", err)
+								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read err 620:", err)
 							}
 							breakfor = true
 							conn_need_closed = true
@@ -595,7 +628,7 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 							if read_len == 0 {
 
 								if tolog {
-									log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0 at 598:", err)
+									log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0 at 631:", err)
 								}
 								breakfor = true
 								conn_need_closed = true
@@ -611,7 +644,7 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 						err = c.WriteMessage(websocket.BinaryMessage, ciphertext)
 						if err != nil {
 							if tolog {
-								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 598:", err)
+								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "websocket write err 647:", err)
 							}
 							breakfor = true
 							conn_need_closed = true
@@ -619,7 +652,7 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 						}
 						if erreof {
 							if tolog {
-								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "got io.EOF and local read length > 0.   622")
+								log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "got io.EOF and local read length > 0. at 655")
 							}
 							breakfor = true
 							conn_need_closed = true
@@ -627,7 +660,7 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 						}
 					} else {
 						if tolog {
-							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0 at 608 with no error.   630")
+							log.Println(nowstr(), idintotal, atomic.LoadUint64(&concurrent), "local read length 0 at 608 with no error. at 663")
 						}
 						breakfor = true
 						conn_need_closed = true
