@@ -185,7 +185,7 @@ func sswsgo(w http.ResponseWriter, r *http.Request) {
 					if addrtype == 1 {
 						ip_bytes := make([]byte, 4)
 						ip_bytes = gotdata[1:5]
-						remotehost = string(ip_bytes[0]) + "." + string(ip_bytes[1]) + "." + string(ip_bytes[2]) + "." + string(ip_bytes[3])
+						remotehost = strconv.Itoa(int(ip_bytes[0])) + "." + strconv.Itoa(int(ip_bytes[1])) + "." + strconv.Itoa(int(ip_bytes[2])) + "." + strconv.Itoa(int(ip_bytes[3]))
 						remoteport = int(binary.BigEndian.Uint16(gotdata[5:7]))
 					}
 
