@@ -466,7 +466,7 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 		interrupt := make(chan os.Signal, 1)
 		signal.Notify(interrupt, os.Interrupt)
 
-		u := url.URL{Scheme: "ws", Host: fullurl, Path: "ws"}
+		u := url.URL{Scheme: "wss", Host: fullurl, Path: "ws"}
 
 		c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
