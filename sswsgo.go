@@ -371,7 +371,7 @@ func Proxy(proxystr string) func(*http.Request) (*url.URL, error) {
 	}
 }
 
-func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
+func handleClient(conn net.Conn, urlstr string, sport string, tolog bool, wss bool) {
 
 	conn_need_closed := false
 	localclient := conn.RemoteAddr().String()
@@ -466,8 +466,12 @@ func handleClient(conn net.Conn, urlstr string, sport string, tolog bool) {
 		interrupt := make(chan os.Signal, 1)
 		signal.Notify(interrupt, os.Interrupt)
 
-		u := url.URL{Scheme: "wss", Host: fullurl, Path: "ws"}
+		u := url.URL{Scheme: "ws", Host: fullurl, Path: "ws"}
 
+		if wss {
+			u = url.URL{Scheme: "wss", Host: fullurl, Path: "ws"}
+		}
+	
 		c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
 
@@ -688,7 +692,7 @@ func checkError(err error) {
 	}
 }
 
-func myclient(proxystr string, hostname string, port string, urlstr string, sport string, tolog bool) {
+func myclient(proxystr string, hostname string, port string, urlstr string, sport string, tolog bool, wss bool) {
 
 	service := hostname + ":" + port
 	log.Println("This is a client(or local server) at " + service)
@@ -707,7 +711,7 @@ func myclient(proxystr string, hostname string, port string, urlstr string, spor
 		if err != nil {
 			continue
 		}
-		go handleClient(conn, urlstr, sport, tolog)
+		go handleClient(conn, urlstr, sport, tolog, wss)
 	}
 }
 
@@ -718,6 +722,7 @@ func main() {
 	s := flag.Bool("s", false, "Server")
 	c := flag.Bool("c", false, "Client")
 	tolog := flag.Bool("tolog", false, "log or not")
+	wss := flag.Bool("wss", false, "wss or ws")
 	proxy := flag.String("proxy", "", "local http proxy")
 	hostname := flag.String("hostname", "0.0.0.0", "hostname")
 	port := flag.String("port", "7071", "port")
@@ -763,6 +768,6 @@ func main() {
 
 	} else {
 
-		myclient(*proxy, *hostname, *port, *urlstr, *sport, *tolog)
+		myclient(*proxy, *hostname, *port, *urlstr, *sport, *tolog, *wss)
 	}
 }
